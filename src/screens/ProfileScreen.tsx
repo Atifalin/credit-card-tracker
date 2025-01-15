@@ -15,18 +15,31 @@ import { signOut } from '../services/auth';
 import { supabase } from '../services/supabase';
 import CustomButton from '../components/CustomButton';
 import Toast from 'react-native-toast-message';
+import { useCurrency } from '../contexts/CurrencyContext';
 
 interface Profile {
   id: string;
   name: string;
   email: string;
+  currency: string;
 }
+
+const SUPPORTED_CURRENCIES = [
+  { label: '🇺🇸 US Dollar (USD)', value: 'USD' },
+  { label: '🇪🇺 Euro (EUR)', value: 'EUR' },
+  { label: '🇬🇧 British Pound (GBP)', value: 'GBP' },
+  { label: '🇯🇵 Japanese Yen (JPY)', value: 'JPY' },
+  { label: '🇨🇦 Canadian Dollar (CAD)', value: 'CAD' },
+  { label: '🇦🇺 Australian Dollar (AUD)', value: 'AUD' },
+  { label: '🇮🇳 Indian Rupee (INR)', value: 'INR' },
+];
 
 export default function ProfileScreen() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
+  const { currency, setCurrency } = useCurrency();
 
   useEffect(() => {
     fetchProfile();
@@ -78,6 +91,23 @@ export default function ProfileScreen() {
     Alert.alert('Coming Soon', 'Data backup feature will be available soon!');
   };
 
+  const handleCurrencyChange = async (value: string) => {
+    try {
+      await setCurrency(value);
+      Toast.show({
+        type: 'success',
+        text1: 'Success',
+        text2: 'Currency updated successfully',
+      });
+    } catch (error: any) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to update currency',
+      });
+    }
+  };
+
   const confirmSignOut = () => {
     Alert.alert(
       'Sign Out',
@@ -112,6 +142,34 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Preferences</Text>
         
+        <TouchableOpacity 
+          style={styles.settingItem}
+          onPress={() => {
+            Alert.alert(
+              'Select Currency',
+              'Choose your preferred currency',
+              SUPPORTED_CURRENCIES.map(curr => ({
+                text: curr.label,
+                onPress: () => handleCurrencyChange(curr.value),
+                style: currency === curr.value ? 'destructive' : 'default'
+              })),
+              { cancelable: true }
+            );
+          }}
+        >
+          <View style={styles.settingLeft}>
+            <Icon name="currency-usd" size={24} color={COLORS.gray700} />
+            <Text style={styles.settingText}>Currency</Text>
+          </View>
+          <View style={styles.settingRight}>
+            <Text style={styles.settingValue}>
+              {SUPPORTED_CURRENCIES.find(curr => curr.value === currency)?.label.split(' ')[0] || '🇺🇸'}{' '}
+              {currency}
+            </Text>
+            <Icon name="chevron-right" size={24} color={COLORS.gray400} />
+          </View>
+        </TouchableOpacity>
+
         <View style={styles.settingItem}>
           <View style={styles.settingLeft}>
             <Icon name="bell-outline" size={24} color={COLORS.gray700} />
@@ -232,6 +290,15 @@ const styles = StyleSheet.create({
   settingText: {
     fontSize: SIZES.md,
     color: COLORS.gray700,
+  },
+  settingRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  settingValue: {
+    fontSize: SIZES.md,
+    color: COLORS.gray600,
   },
   menuItem: {
     flexDirection: 'row',

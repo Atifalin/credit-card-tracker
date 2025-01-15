@@ -6,9 +6,22 @@ A modern React Native application for tracking credit card expenses and managing
 
 - 💳 Track multiple credit cards and their transactions
 - 📊 View total balance and transaction history
-- 📱 Beautiful, modern UI with gradient designs
+- 🔍 Advanced transaction filtering by:
+  - Date ranges (Today, Week, Month, Year)
+  - Transaction types (Expense/Payment)
+  - Categories
+  - Cards
+- 📈 Comprehensive analytics:
+  - Spending trends over time
+  - Category-wise breakdown
+  - Visual percentage bars
+  - Total expenses and payments
+- 📱 Beautiful, modern UI with:
+  - Clean, intuitive design
+  - Smooth animations
+  - Visual feedback
+  - Responsive layout
 - 🔒 Secure authentication with Supabase
-- 📈 Analytics for expense tracking
 - ✨ Real-time updates
 
 ## Tech Stack
@@ -18,6 +31,7 @@ A modern React Native application for tracking credit card expenses and managing
 - Supabase (Backend & Authentication)
 - Expo
 - React Navigation
+- React Native Vector Icons
 
 ## Getting Started
 
@@ -61,11 +75,37 @@ yarn start
 ```
 src/
 ├── components/     # Reusable UI components
-├── constants/      # Theme, colors, and other constants
-├── screens/        # Application screens
-├── services/       # API and service integrations
-└── types/         # TypeScript type definitions
+├── constants/      # Theme, colors, categories, and other constants
+├── contexts/      # React contexts (Currency, Auth)
+├── screens/       # Application screens
+│   ├── HomeScreen.tsx           # Dashboard and overview
+│   ├── TransactionsScreen.tsx   # Transaction list with filters
+│   ├── AnalyticsScreen.tsx      # Spending analytics and charts
+│   └── SettingsScreen.tsx       # App settings and preferences
+├── services/      # API and service integrations
+├── utils/         # Helper functions and utilities
+└── types/        # TypeScript type definitions
 ```
+
+## Features in Detail
+
+### Transaction Management
+- Add, edit, and delete transactions
+- Categorize expenses
+- Attach to specific cards
+- Add notes and details
+
+### Analytics
+- Time-based analysis (Week/Month/Year)
+- Category-wise spending breakdown
+- Visual percentage bars
+- Total expense and payment summaries
+
+### Filtering
+- Multi-select category filters
+- Card-specific filtering
+- Date range selection
+- Transaction type filtering
 
 ## Contributing
 

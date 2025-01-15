@@ -1,58 +1,64 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   SafeAreaView,
+  ScrollView,
   Alert,
 } from 'react-native';
-import { COLORS, SIZES } from '../constants/theme';
-import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { COLORS } from '../constants/theme';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useNavigation } from '@react-navigation/native';
+import { useCurrency } from '../contexts/CurrencyContext';
+import { formatCurrency } from '../utils/currency';
+import { EXPENSE_CATEGORIES, PAYMENT_CATEGORIES, Category } from '../constants/categories';
 import { supabase } from '../services/supabase';
-import { formatCurrency } from '../utils/formatters';
 
 interface Transaction {
   id: string;
-  amount: number;
-  type: 'expense' | 'income';
-  description: string;
-  category: string;
-  notes?: string;
-  created_at: string;
+  user_id: string;
   card_id: string;
-  card?: {
+  amount: number;
+  type: 'expense' | 'payment';
+  category: string;
+  notes: string;
+  receipt_url: string;
+  created_at: string;
+  card: {
     nickname: string;
-    last_four: string;
+    last_four_digits: string;
   };
 }
 
-export default function TransactionDetailsScreen() {
+export default function TransactionDetailsScreen({ route }: any) {
   const navigation = useNavigation();
-  const route = useRoute();
-  const [transaction, setTransaction] = useState<Transaction | null>(null);
-  const routeTransaction = (route.params as any)?.transaction as Transaction;
+  const { currency } = useCurrency();
+  const transaction: Transaction = route.params.transaction;
 
-  useEffect(() => {
-    if (routeTransaction) {
-      setTransaction(routeTransaction);
-    }
-  }, [routeTransaction]);
+  const getCategoryDetails = (categoryId: string, type: 'expense' | 'payment') => {
+    const categories = type === 'expense' ? EXPENSE_CATEGORIES : PAYMENT_CATEGORIES;
+    const foundCategory = categories.find((cat: Category) => cat.id === categoryId);
+    
+    return foundCategory || { 
+      id: categoryId,
+      label: categoryId.charAt(0).toUpperCase() + categoryId.slice(1),
+      icon: 'help-circle'
+    };
+  };
+
+  const isExpense = transaction.type === 'expense';
+  const categoryDetails = getCategoryDetails(transaction.category, transaction.type);
 
   const handleEdit = () => {
-    if (transaction) {
-      navigation.navigate('EditTransaction', { transaction });
-    }
+    navigation.navigate('EditTransaction', { transaction });
   };
 
   const handleDelete = async () => {
-    if (!transaction) return;
-
     Alert.alert(
       'Delete Transaction',
-      'Are you sure you want to delete this transaction?',
+      'Are you sure you want to delete this transaction? This action cannot be undone.',
       [
         {
           text: 'Cancel',
@@ -71,9 +77,8 @@ export default function TransactionDetailsScreen() {
               if (error) throw error;
 
               navigation.goBack();
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete transaction');
-              console.error('Error deleting transaction:', error);
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to delete transaction');
             }
           },
         },
@@ -81,91 +86,73 @@ export default function TransactionDetailsScreen() {
     );
   };
 
-  if (!transaction) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color={COLORS.gray800} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Transaction Details</Text>
-          <View style={{ width: 24 }} />
-        </View>
-        <View style={[styles.content, styles.centerContent]}>
-          <Text>Transaction not found</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.gray800} />
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Icon name="chevron-left" size={28} color={COLORS.gray800} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Transaction Details</Text>
-        <TouchableOpacity onPress={handleDelete}>
-          <Ionicons name="trash-outline" size={24} color={COLORS.error} />
+        <Text style={styles.headerTitle}>Details</Text>
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={handleEdit}
+        >
+          <Text style={styles.editButtonText}>Edit</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
-        <View style={styles.amountContainer}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={[styles.content, styles.centered]}>
+          <Icon
+            name={categoryDetails.icon}
+            size={48}
+            color={isExpense ? COLORS.error : COLORS.success}
+            style={styles.categoryIcon}
+          />
+          
+          <Text style={styles.categoryLabel}>{categoryDetails.label}</Text>
+          
           <Text style={[
             styles.amount,
-            { color: transaction.type === 'expense' ? COLORS.error : COLORS.success }
+            { color: isExpense ? COLORS.error : COLORS.success }
           ]}>
-            {transaction.type === 'expense' ? '-' : '+'}
-            {formatCurrency(transaction.amount)}
+            {isExpense ? '-' : '+'}
+            {formatCurrency(Math.abs(transaction.amount), currency)}
           </Text>
-          <Text style={styles.date}>
-            {new Date(transaction.created_at).toLocaleDateString('en-US', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            })}
-          </Text>
-        </View>
 
-        <View style={styles.detailsContainer}>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Description</Text>
-            <Text style={styles.detailValue}>{transaction.description}</Text>
-          </View>
-
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Category</Text>
-            <Text style={styles.detailValue}>{transaction.category}</Text>
-          </View>
-
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Type</Text>
-            <Text style={styles.detailValue}>
-              {transaction?.type ? transaction.type.charAt(0).toUpperCase() + transaction.type.slice(1) : ''}
-            </Text>
-          </View>
-
-          {transaction.card && (
+          <View style={styles.detailsContainer}>
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Card</Text>
               <Text style={styles.detailValue}>
-                {transaction.card.nickname} (*{transaction.card.last_four})
+                {transaction.card.nickname} (*{transaction.card.last_four_digits})
               </Text>
             </View>
-          )}
 
-          {transaction.notes && (
             <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Notes</Text>
-              <Text style={styles.detailValue}>{transaction.notes}</Text>
+              <Text style={styles.detailLabel}>Date</Text>
+              <Text style={styles.detailValue}>
+                {new Date(transaction.created_at).toLocaleDateString()}
+              </Text>
             </View>
-          )}
+
+            {transaction.notes && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Notes</Text>
+                <Text style={styles.detailValue}>{transaction.notes}</Text>
+              </View>
+            )}
+          </View>
         </View>
 
-        <TouchableOpacity style={styles.editButton} onPress={handleEdit}>
-          <Text style={styles.editButtonText}>Edit Transaction</Text>
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={handleDelete}
+        >
+          <Icon name="trash-can-outline" size={20} color={COLORS.error} />
+          <Text style={styles.deleteButtonText}>Delete Transaction</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -179,64 +166,95 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    padding: SIZES.screenPadding,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.gray200,
   },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerTitle: {
-    fontSize: SIZES.lg,
+    fontSize: 17,
     fontWeight: '600',
     color: COLORS.gray800,
+  },
+  editButton: {
+    width: 80,
+    alignItems: 'flex-end',
+  },
+  editButtonText: {
+    fontSize: 17,
+    color: COLORS.primary,
+    fontWeight: '500',
   },
   content: {
     flex: 1,
   },
-  centerContent: {
-    justifyContent: 'center',
+  centered: {
     alignItems: 'center',
+    paddingTop: 24,
   },
-  amountContainer: {
-    alignItems: 'center',
-    padding: SIZES.xl,
+  categoryIcon: {
     backgroundColor: COLORS.gray100,
+    padding: 16,
+    borderRadius: 32,
+    marginBottom: 12,
+  },
+  categoryLabel: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: COLORS.gray800,
+    marginBottom: 8,
   },
   amount: {
-    fontSize: SIZES.xxl,
+    fontSize: 32,
     fontWeight: 'bold',
-  },
-  date: {
-    marginTop: SIZES.xs,
-    color: COLORS.gray600,
-    fontSize: SIZES.md,
+    marginBottom: 32,
   },
   detailsContainer: {
-    padding: SIZES.screenPadding,
+    width: '100%',
+    paddingHorizontal: 16,
   },
   detailRow: {
-    marginBottom: SIZES.lg,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray200,
   },
   detailLabel: {
-    fontSize: SIZES.sm,
-    color: COLORS.gray500,
-    marginBottom: SIZES.xs,
+    fontSize: 15,
+    color: COLORS.gray600,
   },
   detailValue: {
-    fontSize: SIZES.md,
+    fontSize: 15,
     color: COLORS.gray800,
     fontWeight: '500',
   },
-  editButton: {
-    margin: SIZES.screenPadding,
-    backgroundColor: COLORS.primary,
-    padding: SIZES.md,
-    borderRadius: SIZES.buttonRadius,
+  deleteButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.white,
+    paddingVertical: 16,
+    marginTop: 32,
+    marginHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.error + '30',
   },
-  editButtonText: {
-    color: COLORS.white,
-    fontSize: SIZES.md,
+  deleteButtonText: {
+    color: COLORS.error,
+    fontSize: 15,
     fontWeight: '600',
+    marginLeft: 8,
   },
 });

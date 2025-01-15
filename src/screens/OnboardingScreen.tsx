@@ -41,6 +41,7 @@ export default function OnboardingScreen() {
     statementDate: '',
     dueDate: '',
   });
+  const [currency, setCurrency] = useState('USD'); // Add currency state
 
   const handleCardFormChange = (key: keyof CardForm, value: string) => {
     setCardForm(prev => ({ ...prev, [key]: value }));
@@ -151,6 +152,7 @@ export default function OnboardingScreen() {
         .insert([{ 
           id: user.id, 
           name,
+          currency, // Use currency state instead of hardcoded 'USD'
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }])
@@ -222,6 +224,25 @@ export default function OnboardingScreen() {
               editable={!loading}
               placeholderTextColor={COLORS.gray500}
             />
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Currency</Text>
+            <View style={styles.row}>
+              <Text style={styles.input}>USD</Text>
+              <Text style={styles.input}>INR</Text>
+            </View>
+            <View style={styles.inputContainer}>
+              <Icon name="currency-usd" size={24} color={COLORS.gray600} />
+              <TextInput
+                style={styles.input}
+                placeholder="Select Currency"
+                value={currency}
+                onChangeText={(value) => setCurrency(value)}
+                editable={!loading}
+                placeholderTextColor={COLORS.gray500}
+              />
+            </View>
           </View>
 
           <View style={styles.section}>

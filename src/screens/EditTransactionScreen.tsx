@@ -11,12 +11,14 @@ import {
   SafeAreaView,
   Alert,
 } from 'react-native';
-import { COLORS, SIZES } from '../constants/theme';
+import { COLORS } from '../constants/theme';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { supabase } from '../services/supabase';
 import Toast from 'react-native-toast-message';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useCurrency } from '../contexts/CurrencyContext';
+import { EXPENSE_CATEGORIES, PAYMENT_CATEGORIES, Category } from '../constants/categories';
 
 interface Card {
   id: string;
@@ -31,44 +33,35 @@ interface Transaction {
   user_id: string;
   card_id: string;
   amount: number;
-  transaction_type: string;
+  transaction_type: 'expense' | 'payment';
   category: string;
   notes: string;
   receipt_url: string;
-  transaction_date: string;
+  created_at: string;
+  card: {
+    nickname: string;
+    last_four_digits: string;
+  };
 }
 
-const CATEGORIES = [
-  { id: 'food', label: 'Food', icon: 'food' },
-  { id: 'shopping', label: 'Shopping', icon: 'shopping' },
-  { id: 'transportation', label: 'Transportation', icon: 'car' },
-  { id: 'entertainment', label: 'Entertainment', icon: 'movie' },
-  { id: 'utilities', label: 'Utilities', icon: 'lightning-bolt' },
-  { id: 'health', label: 'Health', icon: 'medical-bag' },
-  { id: 'other', label: 'Other', icon: 'dots-horizontal' },
-];
-
 const TRANSACTION_TYPES = [
-  { id: 'expense', label: 'Expense', icon: 'arrow-up' },
-  { id: 'payment', label: 'Payment', icon: 'arrow-down' },
+  { id: 'expense', label: 'Expense', icon: 'arrow-down', color: COLORS.error },
+  { id: 'payment', label: 'Payment', icon: 'arrow-up', color: COLORS.success },
 ];
 
-export default function EditTransactionScreen() {
+export default function EditTransactionScreen({ route }: any) {
   const navigation = useNavigation();
-  const route = useRoute();
-  const transaction = (route.params as any)?.transaction as Transaction;
+  const { currency } = useCurrency();
+  const originalTransaction: Transaction = route.params.transaction;
 
-  const [amount, setAmount] = useState(Math.abs(transaction.amount).toString());
-  const [notes, setNotes] = useState(transaction.notes || '');
-  const [category, setCategory] = useState(transaction.category);
-  const [transactionType, setTransactionType] = useState<'expense' | 'payment'>(transaction.transaction_type as 'expense' | 'payment');
-  const [selectedCard, setSelectedCard] = useState<Card | null>(null);
-  const [cards, setCards] = useState<Card[]>([]);
-  const [transactionDate, setTransactionDate] = useState(
-    new Date(transaction.transaction_date)
-  );
+  const [amount, setAmount] = useState(originalTransaction.amount.toString());
+  const [type, setType] = useState<'expense' | 'payment'>(originalTransaction.transaction_type);
+  const [category, setCategory] = useState(originalTransaction.category);
+  const [notes, setNotes] = useState(originalTransaction.notes || '');
+  const [date, setDate] = useState(new Date(originalTransaction.created_at));
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cards, setCards] = useState<Card[]>([]);
+  const [selectedCard, setSelectedCard] = useState<Card | null>(null);
 
   useEffect(() => {
     fetchCards();
@@ -81,17 +74,14 @@ export default function EditTransactionScreen() {
 
       const { data, error } = await supabase
         .from('cards')
-        .select('id, nickname, last_four_digits, current_balance, credit_limit')
+        .select('*')
         .eq('user_id', user.id);
 
       if (error) throw error;
+
       setCards(data || []);
-      
-      // Set the selected card
-      const card = data?.find(c => c.id === transaction.card_id);
-      if (card) {
-        setSelectedCard(card);
-      }
+      const card = data?.find(c => c.id === originalTransaction.card_id);
+      if (card) setSelectedCard(card);
     } catch (error: any) {
       Toast.show({
         type: 'error',
@@ -101,72 +91,25 @@ export default function EditTransactionScreen() {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!amount || !selectedCard || !category) {
-      Toast.show({
-        type: 'error',
-        text1: 'Missing Fields',
-        text2: 'Please fill in all required fields',
-      });
-      return;
-    }
-
-    const parsedAmount = Math.abs(parseFloat(amount));
-    
-    // For credit cards:
-    // - Expenses increase the balance (positive amount)
-    // - Payments decrease the balance (negative amount)
-    const newTransactionAmount = transactionType === 'expense' ? parsedAmount : -parsedAmount;
-    
-    // Calculate the difference in amount to update the card balance
-    const amountDifference = newTransactionAmount - transaction.amount;
-    const newBalance = selectedCard.current_balance + amountDifference;
-
-    // Check if this transaction would exceed the credit limit
-    if (transactionType === 'expense' && newBalance > selectedCard.credit_limit) {
-      Toast.show({
-        type: 'error',
-        text1: 'Credit Limit Exceeded',
-        text2: 'This transaction would exceed your credit limit',
-      });
-      return;
-    }
-
+  const handleSave = async () => {
     try {
-      setIsSubmitting(true);
-      
-      // Get the current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!user) throw new Error('No user found');
+      if (!selectedCard) throw new Error('Please select a card');
+      if (!amount || isNaN(parseFloat(amount))) throw new Error('Please enter a valid amount');
+      if (!category) throw new Error('Please select a category');
 
-      // Update the transaction
-      const { error: transactionError } = await supabase
+      const { error } = await supabase
         .from('transactions')
         .update({
-          user_id: user.id,
-          amount: newTransactionAmount,
-          transaction_type: transactionType,
+          amount: parseFloat(amount),
+          transaction_type: type,
           category,
           notes,
+          created_at: date.toISOString(),
           card_id: selectedCard.id,
-          transaction_date: transactionDate.toISOString(),
-          updated_at: new Date().toISOString(),
         })
-        .eq('id', transaction.id);
+        .eq('id', originalTransaction.id);
 
-      if (transactionError) throw transactionError;
-
-      // Update the card balance with the difference
-      const { error: cardError } = await supabase
-        .from('cards')
-        .update({
-          current_balance: newBalance,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', selectedCard.id);
-
-      if (cardError) throw cardError;
+      if (error) throw error;
 
       Toast.show({
         type: 'success',
@@ -180,15 +123,13 @@ export default function EditTransactionScreen() {
         text1: 'Error',
         text2: error.message,
       });
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     Alert.alert(
       'Delete Transaction',
-      'Are you sure you want to delete this transaction?',
+      'Are you sure you want to delete this transaction? This action cannot be undone.',
       [
         {
           text: 'Cancel',
@@ -199,33 +140,12 @@ export default function EditTransactionScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              setIsSubmitting(true);
-
-              // Get the current user
-              const { data: { user }, error: userError } = await supabase.auth.getUser();
-              if (userError) throw userError;
-              if (!user) throw new Error('No user found');
-
-              // Reverse the transaction amount in the card balance
-              const { error: cardError } = await supabase
-                .from('cards')
-                .update({
-                  current_balance: selectedCard.current_balance - transaction.amount,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq('id', selectedCard.id)
-                .eq('user_id', user.id);
-
-              if (cardError) throw cardError;
-
-              // Delete the transaction
-              const { error: deleteError } = await supabase
+              const { error } = await supabase
                 .from('transactions')
                 .delete()
-                .eq('id', transaction.id)
-                .eq('user_id', user.id);
+                .eq('id', originalTransaction.id);
 
-              if (deleteError) throw deleteError;
+              if (error) throw error;
 
               Toast.show({
                 type: 'success',
@@ -239,172 +159,98 @@ export default function EditTransactionScreen() {
                 text1: 'Error',
                 text2: error.message,
               });
-            } finally {
-              setIsSubmitting(false);
             }
           },
         },
-      ],
+      ]
     );
   };
 
-  const handleDateChange = (event: any, selectedDate: any) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      setTransactionDate(selectedDate);
-    }
-  };
-
-  const showDatepicker = () => {
-    setShowDatePicker(true);
-  };
+  const categories = type === 'expense' ? EXPENSE_CATEGORIES : PAYMENT_CATEGORIES;
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
+      <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardAvoid}
+        style={{ flex: 1 }}
       >
-        <ScrollView style={styles.scrollView}>
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>Edit Transaction</Text>
-            <TouchableOpacity
-              style={styles.deleteButton}
-              onPress={handleDelete}
-              disabled={isSubmitting}
-            >
-              <Icon name="delete-outline" size={24} color={COLORS.error} />
-            </TouchableOpacity>
-          </View>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Icon name="chevron-left" size={28} color={COLORS.gray800} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Edit Transaction</Text>
+          <TouchableOpacity
+            style={styles.saveButton}
+            onPress={handleSave}
+          >
+            <Text style={styles.saveButtonText}>Save</Text>
+          </TouchableOpacity>
+        </View>
 
-          {/* Transaction Type Selection */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Transaction Type</Text>
-            <View style={styles.typeButtonsContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.typeButton,
-                  transactionType === 'expense' && styles.typeButtonSelected,
-                ]}
-                onPress={() => setTransactionType('expense')}
-              >
-                <Icon
-                  name="arrow-up"
-                  size={20}
-                  color={transactionType === 'expense' ? COLORS.white : COLORS.gray600}
-                />
-                <Text
-                  style={[
-                    styles.typeButtonText,
-                    transactionType === 'expense' && styles.typeButtonTextSelected,
-                  ]}
-                >
-                  Expense
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.typeButton,
-                  transactionType === 'payment' && styles.typeButtonSelected,
-                ]}
-                onPress={() => setTransactionType('payment')}
-              >
-                <Icon
-                  name="arrow-down"
-                  size={20}
-                  color={transactionType === 'payment' ? COLORS.white : COLORS.gray600}
-                />
-                <Text
-                  style={[
-                    styles.typeButtonText,
-                    transactionType === 'payment' && styles.typeButtonTextSelected,
-                  ]}
-                >
-                  Payment
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Amount Input */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Amount</Text>
             <TextInput
               style={styles.amountInput}
-              placeholder="0.00"
-              keyboardType="decimal-pad"
               value={amount}
               onChangeText={setAmount}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
               placeholderTextColor={COLORS.gray400}
             />
           </View>
 
-          {/* Card Selection */}
+          {/* Transaction Type */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Card</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.cardList}
-            >
-              {cards.map((card) => (
+            <Text style={styles.sectionTitle}>Type</Text>
+            <View style={styles.typeContainer}>
+              {TRANSACTION_TYPES.map((t) => (
                 <TouchableOpacity
-                  key={card.id}
+                  key={t.id}
                   style={[
-                    styles.cardButton,
-                    selectedCard?.id === card.id && styles.cardButtonSelected,
+                    styles.typeButton,
+                    type === t.id && { backgroundColor: t.color + '15' },
                   ]}
-                  onPress={() => setSelectedCard(card)}
+                  onPress={() => setType(t.id as 'expense' | 'payment')}
                 >
-                  <Text
-                    style={[
-                      styles.cardButtonText,
-                      selectedCard?.id === card.id &&
-                        styles.cardButtonTextSelected,
-                    ]}
-                  >
-                    {card.nickname}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.cardButtonSubtext,
-                      selectedCard?.id === card.id &&
-                        styles.cardButtonTextSelected,
-                    ]}
-                  >
-                    *{card.last_four_digits}
+                  <Icon name={t.icon} size={24} color={type === t.id ? t.color : COLORS.gray400} />
+                  <Text style={[
+                    styles.typeText,
+                    type === t.id && { color: t.color },
+                  ]}>
+                    {t.label}
                   </Text>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
+            </View>
           </View>
 
-          {/* Category Selection */}
+          {/* Categories */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Category</Text>
-            <View style={styles.categoryGrid}>
-              {CATEGORIES.map((cat) => (
+            <View style={styles.categoriesGrid}>
+              {categories.map((cat) => (
                 <TouchableOpacity
                   key={cat.id}
                   style={[
                     styles.categoryButton,
-                    category === cat.id && styles.categoryButtonSelected,
+                    category === cat.id && { backgroundColor: COLORS.primary + '15' },
                   ]}
                   onPress={() => setCategory(cat.id)}
                 >
                   <Icon
                     name={cat.icon}
                     size={24}
-                    color={
-                      category === cat.id ? COLORS.white : COLORS.gray600
-                    }
+                    color={category === cat.id ? COLORS.primary : COLORS.gray400}
                   />
-                  <Text
-                    style={[
-                      styles.categoryButtonText,
-                      category === cat.id && styles.categoryButtonTextSelected,
-                    ]}
-                  >
+                  <Text style={[
+                    styles.categoryText,
+                    category === cat.id && { color: COLORS.primary },
+                  ]}>
                     {cat.label}
                   </Text>
                 </TouchableOpacity>
@@ -412,71 +258,57 @@ export default function EditTransactionScreen() {
             </View>
           </View>
 
-          {/* Date Selection */}
+          {/* Notes */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Date</Text>
-            {Platform.OS === 'ios' && showDatePicker ? (
-              <View>
-                <View style={styles.datePickerHeader}>
-                  <TouchableOpacity
-                    onPress={() => setShowDatePicker(false)}
-                    style={styles.datePickerButton}
-                  >
-                    <Text style={styles.datePickerButtonText}>Done</Text>
-                  </TouchableOpacity>
-                </View>
-                <DateTimePicker
-                  value={transactionDate}
-                  mode="date"
-                  display="spinner"
-                  onChange={handleDateChange}
-                />
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.dateInput}
-                onPress={showDatepicker}
-              >
-                <Icon name="calendar" size={24} color={COLORS.gray600} />
-                <Text style={styles.dateText}>
-                  {transactionDate.toLocaleDateString()}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Notes Input */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Notes (Optional)</Text>
+            <Text style={styles.sectionTitle}>Notes</Text>
             <TextInput
               style={styles.notesInput}
-              placeholder="Add notes..."
-              multiline
               value={notes}
               onChangeText={setNotes}
+              placeholder="Add notes..."
               placeholderTextColor={COLORS.gray400}
+              multiline
             />
           </View>
 
-          {/* Submit Button */}
+          {/* Date */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Date</Text>
+            <TouchableOpacity
+              style={styles.dateButton}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Icon name="calendar" size={24} color={COLORS.gray600} />
+              <Text style={styles.dateText}>
+                {date.toLocaleDateString()}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {showDatePicker && (
+            <DateTimePicker
+              value={date}
+              mode="date"
+              display="inline"
+              onChange={(event, selectedDate) => {
+                setShowDatePicker(false);
+                if (selectedDate) {
+                  setDate(selectedDate);
+                }
+              }}
+            />
+          )}
+
+          {/* Delete Button */}
           <TouchableOpacity
-            style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
-            onPress={handleSubmit}
-            disabled={isSubmitting}
+            style={styles.deleteButton}
+            onPress={handleDelete}
           >
-            <Text style={styles.submitButtonText}>Save Changes</Text>
+            <Icon name="trash-can-outline" size={20} color={COLORS.error} />
+            <Text style={styles.deleteButtonText}>Delete Transaction</Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {Platform.OS === 'android' && showDatePicker && (
-        <DateTimePicker
-          value={transactionDate}
-          mode="date"
-          display="default"
-          onChange={handleDateChange}
-        />
-      )}
     </SafeAreaView>
   );
 }
@@ -484,176 +316,135 @@ export default function EditTransactionScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.gray100,
-  },
-  keyboardAvoid: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
+    backgroundColor: COLORS.white,
   },
   header: {
-    backgroundColor: COLORS.white,
-    paddingHorizontal: SIZES.screenPadding,
-    paddingVertical: SIZES.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.gray200,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray200,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: SIZES.xl,
-    fontWeight: 'bold',
-    color: COLORS.gray800,
-  },
-  deleteButton: {
-    padding: SIZES.xs,
-  },
-  section: {
-    backgroundColor: COLORS.white,
-    padding: SIZES.screenPadding,
-    marginBottom: SIZES.md,
-  },
-  sectionTitle: {
-    fontSize: SIZES.md,
+    fontSize: 17,
     fontWeight: '600',
     color: COLORS.gray800,
-    marginBottom: SIZES.md,
   },
-  typeButtonsContainer: {
+  saveButton: {
+    width: 80,
+    alignItems: 'flex-end',
+  },
+  saveButtonText: {
+    fontSize: 17,
+    color: COLORS.primary,
+    fontWeight: '500',
+  },
+  content: {
+    flex: 1,
+  },
+  section: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray200,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.gray600,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  amountInput: {
+    fontSize: 32,
+    fontWeight: '600',
+    color: COLORS.gray800,
+    padding: 0,
+  },
+  typeContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 12,
   },
   typeButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: SIZES.md,
+    padding: 12,
+    borderRadius: 12,
     backgroundColor: COLORS.gray100,
-    borderRadius: SIZES.md,
-    marginHorizontal: SIZES.xs,
+    gap: 8,
   },
-  typeButtonSelected: {
-    backgroundColor: COLORS.primary,
-  },
-  typeButtonText: {
-    marginLeft: SIZES.xs,
-    fontSize: SIZES.md,
-    color: COLORS.gray600,
-  },
-  typeButtonTextSelected: {
-    color: COLORS.white,
-  },
-  amountInput: {
-    fontSize: SIZES.xl,
-    color: COLORS.gray800,
-    padding: SIZES.md,
-    backgroundColor: COLORS.gray100,
-    borderRadius: SIZES.md,
-  },
-  cardList: {
-    flexDirection: 'row',
-  },
-  cardButton: {
-    padding: SIZES.md,
-    backgroundColor: COLORS.gray100,
-    borderRadius: SIZES.md,
-    marginRight: SIZES.md,
-    minWidth: 120,
-  },
-  cardButtonSelected: {
-    backgroundColor: COLORS.primary,
-  },
-  cardButtonText: {
-    fontSize: SIZES.md,
+  typeText: {
+    fontSize: 15,
     fontWeight: '600',
     color: COLORS.gray600,
-    marginBottom: SIZES.xs,
   },
-  cardButtonSubtext: {
-    fontSize: SIZES.sm,
-    color: COLORS.gray600,
-  },
-  cardButtonTextSelected: {
-    color: COLORS.white,
-  },
-  categoryGrid: {
+  categoriesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -SIZES.xs,
+    gap: 12,
   },
   categoryButton: {
-    width: '31%',
+    width: '30%',
     alignItems: 'center',
-    padding: SIZES.md,
+    padding: 12,
+    borderRadius: 12,
     backgroundColor: COLORS.gray100,
-    borderRadius: SIZES.md,
-    margin: SIZES.xs,
   },
-  categoryButtonSelected: {
-    backgroundColor: COLORS.primary,
-  },
-  categoryButtonText: {
-    marginTop: SIZES.xs,
-    fontSize: SIZES.sm,
-    color: COLORS.gray600,
-  },
-  categoryButtonTextSelected: {
-    color: COLORS.white,
-  },
-  dateInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: SIZES.md,
-    backgroundColor: COLORS.gray100,
-    borderRadius: SIZES.md,
-  },
-  dateText: {
-    marginLeft: SIZES.md,
-    fontSize: SIZES.md,
-    color: COLORS.gray600,
-  },
-  datePickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.sm,
-    backgroundColor: COLORS.gray100,
-    borderTopLeftRadius: SIZES.md,
-    borderTopRightRadius: SIZES.md,
-  },
-  datePickerButton: {
-    padding: SIZES.xs,
-  },
-  datePickerButtonText: {
-    color: COLORS.primary,
-    fontSize: SIZES.md,
+  categoryText: {
+    fontSize: 13,
     fontWeight: '500',
+    color: COLORS.gray600,
+    marginTop: 4,
+    textAlign: 'center',
   },
   notesInput: {
-    height: 100,
-    padding: SIZES.md,
-    backgroundColor: COLORS.gray100,
-    borderRadius: SIZES.md,
-    fontSize: SIZES.md,
+    fontSize: 15,
     color: COLORS.gray800,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.gray100,
+    minHeight: 100,
     textAlignVertical: 'top',
   },
-  submitButton: {
-    backgroundColor: COLORS.primary,
-    padding: SIZES.lg,
-    borderRadius: SIZES.md,
+  dateButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    margin: SIZES.screenPadding,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.gray100,
+    gap: 8,
   },
-  submitButtonDisabled: {
-    opacity: 0.5,
+  dateText: {
+    fontSize: 15,
+    color: COLORS.gray800,
   },
-  submitButtonText: {
-    color: COLORS.white,
-    fontSize: SIZES.md,
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.white,
+    paddingVertical: 16,
+    marginTop: 32,
+    marginHorizontal: 16,
+    marginBottom: 32,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.error + '30',
+  },
+  deleteButtonText: {
+    color: COLORS.error,
+    fontSize: 15,
     fontWeight: '600',
+    marginLeft: 8,
   },
 });

@@ -8,13 +8,16 @@ import {
   Alert,
   RefreshControl,
   SafeAreaView,
+  Platform,
 } from 'react-native';
-import { COLORS, SIZES, GRADIENTS } from '../constants/theme';
+import { COLORS, SIZES, GRADIENTS, SHADOWS } from '../constants/theme';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { supabase } from '../services/supabase';
 import Toast from 'react-native-toast-message';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
+import { useCurrency } from '../contexts/CurrencyContext';
+import { formatCurrency } from '../utils/currency';
 
 interface Card {
   id: string;
@@ -36,6 +39,7 @@ export default function CardsScreen() {
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const { currency } = useCurrency();
 
   useEffect(() => {
     fetchCards();
@@ -121,83 +125,92 @@ export default function CardsScreen() {
     );
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
+  const getGradient = (index: number) => {
+    const gradients = [
+      ['#FF6B6B', '#4ECDC4'],
+      ['#A8E6CF', '#3B4371'],
+      ['#FFD93D', '#FF6B6B'],
+      ['#6C63FF', '#3B4371'],
+      ['#FF758C', '#FF7EB3'],
+    ];
+    return gradients[index % gradients.length];
   };
 
-  const getGradient = (index: number) => {
-    const gradients = [GRADIENTS.card1, GRADIENTS.card2, GRADIENTS.card3];
-    return gradients[index % gradients.length];
+  const renderCard = (card: Card) => {
+    const availableCredit = card.credit_limit - card.current_balance;
+    const formattedAvailableCredit = formatCurrency(availableCredit, currency);
+    const formattedCreditLimit = formatCurrency(card.credit_limit, currency);
+    const formattedCurrentBalance = formatCurrency(card.current_balance, currency);
+
+    return (
+      <TouchableOpacity
+        key={card.id}
+        style={styles.cardContainer}
+        onPress={() => handleEditCard(card)}
+        disabled={loading}
+      >
+        <LinearGradient
+          colors={getGradient(cards.indexOf(card))}
+          style={styles.card}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          <View style={styles.cardContent}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardNickname}>{card.nickname || 'Test'}</Text>
+              <TouchableOpacity
+                onPress={() => handleDeleteCard(card)}
+                disabled={loading}
+                style={styles.deleteButton}
+              >
+                <Icon name="delete-outline" size={24} color={COLORS.white} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.currentBalanceLabel}>Current Balance</Text>
+            <Text style={styles.currentBalanceValue}>{formattedCurrentBalance}</Text>
+            
+            <Text style={styles.cardNumber}>•••• •••• •••• {card.last_four_digits}</Text>
+
+            <View style={styles.bottomRow}>
+              <View style={styles.limitContainer}>
+                <Text style={styles.limitLabel}>Credit Limit</Text>
+                <Text style={styles.limitValue}>{formattedCreditLimit}</Text>
+              </View>
+
+              <View style={styles.limitContainer}>
+                <Text style={styles.limitLabel}>Available</Text>
+                <Text style={styles.limitValue}>{formattedAvailableCredit}</Text>
+              </View>
+            </View>
+          </View>
+        </LinearGradient>
+      </TouchableOpacity>
+    );
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>My Cards</Text>
+        <Text style={styles.title}>My Cards</Text>
       </View>
-      
+
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={{ paddingVertical: SIZES.md }}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
-        {cards.map((card, index) => (
-          <TouchableOpacity
-            key={card.id}
-            style={styles.cardContainer}
-            onPress={() => handleEditCard(card)}
-            disabled={loading}
-          >
-            <LinearGradient
-              colors={getGradient(index)}
-              style={styles.card}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardNickname}>{card.nickname}</Text>
-                <TouchableOpacity
-                  onPress={() => handleDeleteCard(card)}
-                  disabled={loading}
-                  style={styles.deleteButton}
-                >
-                  <Icon name="delete-outline" size={24} color={COLORS.white} />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.cardNumber}>•••• •••• •••• {card.last_four_digits}</Text>
-
-              <View style={styles.cardFooter}>
-                <View>
-                  <Text style={styles.cardLabel}>Balance / Limit</Text>
-                  <Text style={styles.cardBalance}>
-                    {formatCurrency(card.current_balance || 0)} / {formatCurrency(card.credit_limit || 0)}
-                  </Text>
-                </View>
-
-                <View>
-                  <Text style={styles.cardLabel}>Due Date</Text>
-                  <Text style={styles.cardDate}>
-                    {card.due_date ? card.due_date.toString().padStart(2, '0') : '-'}
-                  </Text>
-                </View>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-        ))}
+        {cards.map(renderCard)}
       </ScrollView>
 
       <TouchableOpacity
-        style={styles.fab}
+        style={styles.addButton}
         onPress={handleAddCard}
         disabled={loading}
       >
-        <Icon name="plus" size={24} color={COLORS.white} />
+        <Icon name="plus" size={24} style={styles.addButtonIcon} />
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -209,98 +222,98 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.gray100,
   },
   header: {
+    padding: SIZES.screenPadding,
     backgroundColor: COLORS.white,
-    paddingHorizontal: SIZES.screenPadding,
-    paddingVertical: SIZES.md,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.gray200,
   },
-  headerTitle: {
-    fontSize: SIZES.xl,
-    fontWeight: 'bold',
-    color: COLORS.gray800,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: SIZES.screenPadding,
+  title: {
+    fontSize: 34,
+    fontWeight: '700',
+    color: COLORS.gray900,
   },
   cardContainer: {
-    marginBottom: SIZES.lg,
-    borderRadius: SIZES.md,
-    elevation: 5,
-    shadowColor: COLORS.black,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    marginHorizontal: SIZES.screenPadding,
+    marginVertical: SIZES.md,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: COLORS.white,
+    ...SHADOWS.medium,
   },
   card: {
-    padding: SIZES.lg,
-    borderRadius: SIZES.md,
-    minHeight: 180,
+    height: 220,
+  },
+  cardContent: {
+    flex: 1,
+    padding: 24,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SIZES.lg,
+    marginBottom: 4,
   },
   cardNickname: {
-    fontSize: SIZES.lg,
-    fontWeight: 'bold',
+    fontSize: 34,
+    fontWeight: '600',
     color: COLORS.white,
   },
   deleteButton: {
-    padding: SIZES.xs,
+    padding: 8,
+    marginRight: -8,
+  },
+  currentBalanceLabel: {
+    fontSize: 14,
+    color: COLORS.white,
+    opacity: 0.9,
+    marginBottom: 2,
+  },
+  currentBalanceValue: {
+    fontSize: 32,
+    color: COLORS.white,
+    fontWeight: '600',
+    marginBottom: 12,
   },
   cardNumber: {
-    fontSize: SIZES.xl,
+    fontSize: 14,
     color: COLORS.white,
-    letterSpacing: 2,
-    marginBottom: SIZES.xl,
+    letterSpacing: 4,
+    opacity: 0.9,
+    marginBottom: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
-  cardFooter: {
+  bottomRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
   },
-  cardLabel: {
-    fontSize: SIZES.sm,
+  limitContainer: {
+    flex: 1,
+  },
+  limitLabel: {
+    fontSize: 14,
     color: COLORS.white,
-    opacity: 0.8,
-    marginBottom: SIZES.xs,
+    opacity: 0.9,
+    marginBottom: 2,
   },
-  cardBalance: {
-    fontSize: SIZES.lg,
-    fontWeight: 'bold',
+  limitValue: {
+    fontSize: 16,
     color: COLORS.white,
+    fontWeight: '600',
   },
-  cardDate: {
-    fontSize: SIZES.lg,
-    fontWeight: 'bold',
-    color: COLORS.white,
-  },
-  fab: {
+  addButton: {
     position: 'absolute',
-    right: SIZES.xl,
-    bottom: SIZES.xl,
+    bottom: Platform.OS === 'ios' ? 90 : 70,
+    right: SIZES.screenPadding,
     width: 56,
     height: 56,
     borderRadius: 28,
     backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 5,
-    shadowColor: COLORS.black,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    ...SHADOWS.large,
+  },
+  addButtonIcon: {
+    color: COLORS.white,
   },
 });

@@ -16,6 +16,8 @@ import { supabase } from '../services/supabase';
 import Toast from 'react-native-toast-message';
 import { useNavigation } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useCurrency } from '../contexts/CurrencyContext';
+import { EXPENSE_CATEGORIES, PAYMENT_CATEGORIES, Category } from '../constants/categories';
 
 interface Card {
   id: string;
@@ -25,23 +27,14 @@ interface Card {
   credit_limit: number;
 }
 
-const CATEGORIES = [
-  { id: 'food', label: 'Food', icon: 'food' },
-  { id: 'shopping', label: 'Shopping', icon: 'shopping' },
-  { id: 'transportation', label: 'Transportation', icon: 'car' },
-  { id: 'entertainment', label: 'Entertainment', icon: 'movie' },
-  { id: 'utilities', label: 'Utilities', icon: 'lightning-bolt' },
-  { id: 'health', label: 'Health', icon: 'medical-bag' },
-  { id: 'other', label: 'Other', icon: 'dots-horizontal' },
-];
-
 const TRANSACTION_TYPES = [
-  { id: 'expense', label: 'Expense', icon: 'arrow-up' },
-  { id: 'payment', label: 'Payment', icon: 'arrow-down' },
+  { id: 'expense', label: 'Expense', icon: 'arrow-down', color: COLORS.error },
+  { id: 'payment', label: 'Payment', icon: 'arrow-up', color: COLORS.success },
 ];
 
 export default function AddTransactionScreen() {
   const navigation = useNavigation();
+  const { currency } = useCurrency();
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [category, setCategory] = useState('');
@@ -172,6 +165,45 @@ export default function AddTransactionScreen() {
     setShowDatePicker(true);
   };
 
+  const renderCategories = () => {
+    const categories = transactionType === 'expense' ? EXPENSE_CATEGORIES : PAYMENT_CATEGORIES;
+    
+    return (
+      <View style={styles.categoriesContainer}>
+        <Text style={styles.sectionTitle}>Category</Text>
+        <View style={styles.categoriesGrid}>
+          {categories.map((cat: Category) => (
+            <TouchableOpacity
+              key={cat.id}
+              style={[
+                styles.categoryItem,
+                category === cat.id && styles.selectedCategoryItem,
+              ]}
+              onPress={() => setCategory(cat.id)}
+            >
+              <View style={[
+                styles.categoryIcon,
+                category === cat.id && styles.selectedCategoryIcon,
+              ]}>
+                <Icon
+                  name={cat.icon}
+                  size={24}
+                  color={category === cat.id ? COLORS.white : COLORS.gray600}
+                />
+              </View>
+              <Text style={[
+                styles.categoryLabel,
+                category === cat.id && styles.selectedCategoryLabel,
+              ]}>
+                {cat.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -195,7 +227,7 @@ export default function AddTransactionScreen() {
                 onPress={() => setTransactionType('expense')}
               >
                 <Icon
-                  name="arrow-up"
+                  name="arrow-down"
                   size={20}
                   color={transactionType === 'expense' ? COLORS.white : COLORS.gray600}
                 />
@@ -216,7 +248,7 @@ export default function AddTransactionScreen() {
                 onPress={() => setTransactionType('payment')}
               >
                 <Icon
-                  name="arrow-down"
+                  name="arrow-up"
                   size={20}
                   color={transactionType === 'payment' ? COLORS.white : COLORS.gray600}
                 />
@@ -236,7 +268,15 @@ export default function AddTransactionScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Amount</Text>
             <View style={styles.amountInputContainer}>
-              <Text style={styles.currencySymbol}>$</Text>
+              <Text style={styles.currencySymbol}>
+                {currency === 'USD' ? '$' : 
+                 currency === 'EUR' ? '€' :
+                 currency === 'GBP' ? '£' :
+                 currency === 'JPY' ? '¥' :
+                 currency === 'CAD' ? 'C$' :
+                 currency === 'AUD' ? 'A$' :
+                 currency === 'INR' ? '₹' : '$'}
+              </Text>
               <TextInput
                 style={styles.amountInput}
                 placeholder="0.00"
@@ -288,37 +328,7 @@ export default function AddTransactionScreen() {
           </View>
 
           {/* Category Selection */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Category</Text>
-            <View style={styles.categoryGrid}>
-              {CATEGORIES.map((cat) => (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[
-                    styles.categoryButton,
-                    category === cat.id && styles.categoryButtonSelected,
-                  ]}
-                  onPress={() => setCategory(cat.id)}
-                >
-                  <Icon
-                    name={cat.icon}
-                    size={24}
-                    color={
-                      category === cat.id ? COLORS.white : COLORS.gray600
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.categoryButtonText,
-                      category === cat.id && styles.categoryButtonTextSelected,
-                    ]}
-                  >
-                    {cat.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+          {renderCategories()}
 
           {/* Date Selection */}
           <View style={styles.section}>
@@ -418,10 +428,11 @@ const styles = StyleSheet.create({
     marginBottom: SIZES.md,
   },
   sectionTitle: {
-    fontSize: SIZES.md,
+    fontSize: 17,
     fontWeight: '600',
     color: COLORS.gray800,
-    marginBottom: SIZES.md,
+    marginBottom: SIZES.sm,
+    marginLeft: 4,
   },
   typeButtonsContainer: {
     flexDirection: 'row',
@@ -493,29 +504,42 @@ const styles = StyleSheet.create({
   cardButtonTextSelected: {
     color: COLORS.white,
   },
-  categoryGrid: {
+  categoriesContainer: {
+    marginTop: SIZES.md,
+  },
+  categoriesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -SIZES.xs,
+    marginHorizontal: -4,
   },
-  categoryButton: {
-    width: '31%',
-    alignItems: 'center',
-    padding: SIZES.md,
+  categoryItem: {
+    width: '33.33%',
+    padding: 4,
+    marginBottom: 8,
+  },
+  categoryIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: COLORS.gray100,
-    borderRadius: SIZES.md,
-    margin: SIZES.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
   },
-  categoryButtonSelected: {
+  selectedCategoryIcon: {
     backgroundColor: COLORS.primary,
   },
-  categoryButtonText: {
-    marginTop: SIZES.xs,
-    fontSize: SIZES.sm,
+  categoryLabel: {
+    fontSize: 12,
     color: COLORS.gray600,
+    textAlign: 'center',
   },
-  categoryButtonTextSelected: {
-    color: COLORS.white,
+  selectedCategoryLabel: {
+    color: COLORS.primary,
+    fontWeight: '500',
+  },
+  selectedCategoryItem: {
+    opacity: 1,
   },
   dateInput: {
     flexDirection: 'row',
